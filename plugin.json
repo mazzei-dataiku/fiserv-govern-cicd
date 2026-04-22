@@ -31,5 +31,14 @@
         "url": "",
 
         "licenseInfo": "Apache Software License"
-    }
+    },
+    "params": [
+        {
+            "name": "parameter1",
+            "label": "User-readable name",
+            "type": "STRING",
+            "description": "Some documentation for parameter1",
+            "mandatory": true
+        }
+    ]
 }
