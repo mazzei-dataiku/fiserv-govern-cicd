@@ -36,7 +36,7 @@
         {
             "name": "parameter1",
             "label": "User-readable name",
-            "type": "STRING",
+            "type": "STRINGS",
             "description": "Some documentation for parameter1",
             "mandatory": true
         }
