@@ -54,23 +54,35 @@ def _read_stream_bytes(stream) -> bytes:
     raise TypeError(f"Unsupported stream type: {type(stream)!r}")
 
 
-def _ensure_branch(repo, branch_name: str, base_branch: str = "main") -> str:
-    """Ensure `branch_name` exists on the GitHub repo.
+def _recreate_branch(repo, branch_name: str, base_branch: str = "main") -> str:
+    """Delete and recreate `branch_name` from `base_branch`.
+
+    This matches the "always start from a clean branch" workflow: if the branch
+    already exists, it is deleted first.
 
     Returns:
-        The commit SHA of the branch head.
+        The commit SHA of the base branch head used for the new ref.
     """
 
-    try:
-        branch = repo.get_branch(branch_name)
-        logger.info("Using existing branch '%s'", branch_name)
-        return branch.commit.sha
-    except Exception:
-        pass
+    if branch_name == base_branch:
+        raise ValueError("Refusing to delete the base branch")
 
     base = repo.get_branch(base_branch)
+
+    try:
+        ref = repo.get_git_ref(f"heads/{branch_name}")
+    except Exception:
+        ref = None
+
+    if ref is not None:
+        logger.info("Deleting existing branch '%s'", branch_name)
+        try:
+            ref.delete()
+        except Exception as err:
+            raise RuntimeError(f"Failed to delete branch '{branch_name}': {err}") from err
+
     repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=base.commit.sha)
-    logger.info("Created new branch '%s' from '%s'", branch_name, base_branch)
+    logger.info("Created branch '%s' from '%s'", branch_name, base_branch)
     return base.commit.sha
 
 
@@ -117,7 +129,7 @@ def sync_bundle_to_github(
         logger.info("Streaming bundle '%s' from project '%s'", bundle_id, project_key)
         stream = project.get_exported_bundle_archive_stream(bundle_id)
 
-        base_sha = _ensure_branch(repo, target_branch, base_branch=base_branch)
+        base_sha = _recreate_branch(repo, target_branch, base_branch=base_branch)
 
         bundle_bytes = _read_stream_bytes(stream)
         zip_contents = io.BytesIO(bundle_bytes)
