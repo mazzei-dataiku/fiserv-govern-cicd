@@ -28,10 +28,17 @@
     */
     "params": [
         {
-            "name": "parameter1",
-            "label": "User-readable name",
+            "name": "bundle_id",
+            "label": "Bundle id",
             "type": "STRING",
-            "description": "Some documentation for parameter1",
+            "description": "Bundle identifier to publish",
+            "mandatory": true
+        },
+        {
+            "name": "github_repo",
+            "label": "GitHub repo",
+            "type": "STRING",
+            "description": "Target GitHub repository (e.g. org/repo)",
             "mandatory": true
         }
     ],

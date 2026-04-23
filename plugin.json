@@ -34,10 +34,17 @@
     },
     "params": [
         {
-            "name": "parameter1",
-            "label": "User-readable name",
+            "name": "folders_to_skip",
+            "label": "Folders to skip",
             "type": "STRINGS",
-            "description": "Some documentation for parameter1",
+            "description": "Folders within the bundle to skip when pushing to github branch",
+            "mandatory": true
+        },
+        {
+            "name": "github_token",
+            "label": "GitHub API Token",
+            "type": "PASSWORD",
+            "description": "GitHub API Token that can create/scan/run all commands against the repo/branch",
             "mandatory": true
         }
     ]
