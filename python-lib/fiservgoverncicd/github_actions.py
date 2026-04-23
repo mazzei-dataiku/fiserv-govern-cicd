@@ -29,6 +29,7 @@ class WorkflowReport:
     status: str
     conclusion: Optional[str]
     html_url: Optional[str]
+    head_sha: Optional[str]
     artifact_name: str
     report_path: str
     report_content: str
@@ -64,15 +65,48 @@ def _download_artifact_zip(archive_download_url: str, github_token: str, timeout
     return r2.content
 
 
+def _download_run_logs_zip(repo_full_name: str, run_id: int, github_token: str, timeout_seconds: int) -> bytes:
+    """Download a workflow run logs zip.
+
+    This is different from artifacts: logs are available even if the workflow
+    does not upload any artifacts.
+    """
+
+    if not repo_full_name:
+        raise ValueError("Missing repo_full_name")
+
+    headers = {
+        "Authorization": f"token {github_token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    url = f"https://api.github.com/repos/{repo_full_name}/actions/runs/{run_id}/logs"
+    r = requests.get(url, headers=headers, timeout=timeout_seconds, allow_redirects=False)
+    if r.status_code not in (302, 301, 307, 308):
+        r.raise_for_status()
+        raise RuntimeError(f"Expected redirect when downloading run logs, got {r.status_code}")
+
+    redirect_url = r.headers.get("Location")
+    if not redirect_url:
+        raise RuntimeError("Run logs download response missing Location header")
+
+    # Signed URL (S3/GCS). Don't forward Authorization.
+    r2 = requests.get(redirect_url, timeout=timeout_seconds)
+    r2.raise_for_status()
+    return r2.content
+
+
 def wait_for_scan_and_download(
     *,
     branch_name: str,
     github_token: str,
     repo,
+    expected_head_sha: Optional[str] = None,
     report_path: str = "scan_report.txt",
     artifact_name: Optional[str] = None,
+    prefer_logs_over_artifacts: bool = True,
     poll_interval_seconds: int = 10,
-    max_start_wait_seconds: int = 60,
+    max_start_wait_seconds: int = 120,
     max_complete_wait_seconds: int = 20 * 60,
     http_timeout_seconds: int = 60,
 ) -> WorkflowReport:
@@ -103,15 +137,29 @@ def wait_for_scan_and_download(
     if not github_token:
         raise ValueError("Missing required github_token")
 
-    logger.info("Waiting for GitHub Actions run to start (branch=%s)", branch_name)
+    logger.info(
+        "Waiting for GitHub Actions run to start (branch=%s head_sha=%s)",
+        branch_name,
+        expected_head_sha,
+    )
 
     run = None
     start_deadline = time.time() + max_start_wait_seconds
     while time.time() < start_deadline:
         runs = repo.get_workflow_runs(branch=branch_name)
         if getattr(runs, "totalCount", 0) > 0:
-            run = runs[0]
+            # Prefer the run matching the expected commit SHA (avoids grabbing a
+            # cancelled run for an earlier commit while the final run is still
+            # being registered by GitHub).
+            for candidate in runs:
+                candidate_sha = getattr(candidate, "head_sha", None)
+                if expected_head_sha is None or candidate_sha == expected_head_sha:
+                    run = candidate
+                    break
+
+        if run is not None:
             break
+
         time.sleep(5)
 
     if run is None:
@@ -133,10 +181,60 @@ def wait_for_scan_and_download(
             )
         time.sleep(poll_interval_seconds)
 
+    # Preferred: use run logs (works even when no artifacts exist).
+    if prefer_logs_over_artifacts:
+        repo_full_name = getattr(repo, "full_name", None)
+        if repo_full_name:
+            try:
+                logger.info("Downloading workflow run logs (run_id=%s)", run.id)
+                logs_zip = _download_run_logs_zip(
+                    repo_full_name=repo_full_name,
+                    run_id=run.id,
+                    github_token=github_token,
+                    timeout_seconds=http_timeout_seconds,
+                )
+                # Pick the first log file in the zip. (Callers can later provide
+                # a specific path if needed.)
+                with zipfile.ZipFile(io.BytesIO(logs_zip)) as zf:
+                    names = [n for n in zf.namelist() if not n.endswith("/")]
+                    if not names:
+                        raise RuntimeError("Run logs zip contains no files")
+                    chosen_path = names[0]
+                    report_content = zf.read(chosen_path).decode("utf-8", errors="replace")
+
+                return WorkflowReport(
+                    run_id=run.id,
+                    status=run.status,
+                    conclusion=run.conclusion,
+                    html_url=getattr(run, "html_url", None),
+                    head_sha=getattr(run, "head_sha", None),
+                    artifact_name="(run logs)",
+                    report_path=chosen_path,
+                    report_content=report_content,
+                )
+            except Exception as err:
+                logger.warning("Failed to download run logs (run_id=%s): %s", run.id, err)
+
+    # Fallback: artifacts (requires workflow upload-artifact step).
     artifacts = run.get_artifacts()
     if getattr(artifacts, "totalCount", 0) <= 0:
-        raise RuntimeError(
-            f"No artifacts found for workflow run {run.id}. Conclusion={run.conclusion}"
+        logger.warning(
+            "No artifacts found for workflow run %s (conclusion=%s)",
+            run.id,
+            run.conclusion,
+        )
+        return WorkflowReport(
+            run_id=run.id,
+            status=run.status,
+            conclusion=run.conclusion,
+            html_url=getattr(run, "html_url", None),
+            head_sha=getattr(run, "head_sha", None),
+            artifact_name="",
+            report_path="",
+            report_content=(
+                "No artifacts found for this workflow run. "
+                "If you expect a report file, ensure the workflow uploads an artifact."
+            ),
         )
 
     artifact = None
@@ -146,8 +244,24 @@ def wait_for_scan_and_download(
                 artifact = a
                 break
         if artifact is None:
-            raise RuntimeError(
-                f"Artifact '{artifact_name}' not found on run {run.id} (count={artifacts.totalCount})"
+            logger.warning(
+                "Artifact '%s' not found on run %s (count=%s)",
+                artifact_name,
+                run.id,
+                artifacts.totalCount,
+            )
+            return WorkflowReport(
+                run_id=run.id,
+                status=run.status,
+                conclusion=run.conclusion,
+                html_url=getattr(run, "html_url", None),
+                head_sha=getattr(run, "head_sha", None),
+                artifact_name="",
+                report_path="",
+                report_content=(
+                    f"Artifact '{artifact_name}' not found on workflow run. "
+                    "Check workflow configuration."
+                ),
             )
     else:
         artifact = artifacts[0]
@@ -177,6 +291,7 @@ def wait_for_scan_and_download(
         status=run.status,
         conclusion=run.conclusion,
         html_url=getattr(run, "html_url", None),
+        head_sha=getattr(run, "head_sha", None),
         artifact_name=artifact.name,
         report_path=chosen_path,
         report_content=report_content,

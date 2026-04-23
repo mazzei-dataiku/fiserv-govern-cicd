@@ -60,7 +60,7 @@ def run_github_scan(
     repo = build_github_repo(github_token=github_token, github_repo=github_repo)
 
     # 1) Sync bundle contents into a branch
-    sync_bundle_to_github(
+    head_sha = sync_bundle_to_github(
         client=client,
         project_key=project_key,
         bundle_id=bundle_id,
@@ -74,6 +74,7 @@ def run_github_scan(
         branch_name=bundle_id,
         github_token=github_token,
         repo=repo,
+        expected_head_sha=head_sha,
         report_path=report_path,
         artifact_name=artifact_name,
         poll_interval_seconds=poll_interval_seconds,
