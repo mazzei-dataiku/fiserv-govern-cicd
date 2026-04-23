@@ -55,6 +55,32 @@ def parse_scan_report(report_content: str) -> List[ScanFinding]:
     return findings
 
 
+def scan_report_to_markdown_table(
+    report_content: str,
+    *,
+    title: str = "Code Scan Report",
+    ok_message: str = "### ✅ No issues found! Code is clean.",
+) -> str:
+    """Convert scan report content into a Markdown table.
+
+    This matches the style of the original demo output (pipe table).
+    """
+
+    findings = parse_scan_report(report_content)
+    if not findings:
+        return ok_message
+
+    md_output = "| File Path | Line | Column | Error Code | Description |\n"
+    md_output += "| :--- | :--- | :--- | :--- | :--- |\n"
+
+    for f in findings:
+        md_output += (
+            f"| {f.file_path} | {f.line} | {f.column} | `{f.error_code}` | {f.description} |\n"
+        )
+
+    return f"## 🛡️ {title}\n\n{md_output}"
+
+
 def scan_report_to_html_table(
     report_content: str,
     *,

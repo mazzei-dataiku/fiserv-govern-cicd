@@ -9,7 +9,10 @@ from typing import Iterable, Optional
 from fiservgoverncicd.bundle_sync import sync_bundle_to_github
 from fiservgoverncicd.github_actions import WorkflowReport, wait_for_scan_and_download
 from fiservgoverncicd.github_client import build_github_repo
-from fiservgoverncicd.scan_report_renderer import scan_report_to_html_table
+from fiservgoverncicd.scan_report_renderer import (
+    scan_report_to_html_table,
+    scan_report_to_markdown_table,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +33,31 @@ def _render_report_html(report: WorkflowReport) -> str:
         for k, v in meta_rows
     )
 
-    report_html = scan_report_to_html_table(report.report_content, title="Scan Findings")
+    # Match the original demo: a few status lines + a markdown table.
+    status_lines = [
+        f"Scan started (ID: {report.run_id}). Monitoring status...",
+        f"Scan finished with conclusion: {report.conclusion}",
+    ]
+
+    if report.artifact_name:
+        status_lines.append(f"Downloading {report.artifact_name}...")
+        status_lines.append(f"Successfully downloaded {report.artifact_name}...")
+
+    markdown_report = scan_report_to_markdown_table(report.report_content, title="Code Scan Report")
 
     return (
         "<h2>GitHub Actions Scan Report</h2>"
         "<table>"
         f"{meta_html}"
         "</table>"
-        f"{report_html}"
+        "<h3>Output</h3>"
+        "<pre style='white-space:pre-wrap'>"
+        + html.escape("\n".join(status_lines))
+        + "</pre>"
+        "<h3>Report</h3>"
+        "<pre style='white-space:pre-wrap'>"
+        f"{html.escape(markdown_report)}"
+        "</pre>"
     )
 
 
