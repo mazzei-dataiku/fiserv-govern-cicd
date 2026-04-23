@@ -8,7 +8,7 @@
     // Meta data for display purposes:
     "meta": {
         // label: name of the plugin as displayed, should be short
-        "label": "GitHub Bundle Scanning",
+        "label": "Fiserv - GitHub Bundle Scanning",
 
         // description: longer string to help end users understand what this plugin does
         "description": "Publish Dataiku DSS bundles to GitHub and retrieve CI/security scan results as a report for governance workflows.",
