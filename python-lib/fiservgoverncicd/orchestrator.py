@@ -77,6 +77,7 @@ def run_github_scan(
         expected_head_sha=head_sha,
         report_path=report_path,
         artifact_name=artifact_name,
+        prefer_logs_over_artifacts=False,
         poll_interval_seconds=poll_interval_seconds,
         max_start_wait_seconds=max_start_wait_seconds,
         max_complete_wait_seconds=max_complete_wait_seconds,

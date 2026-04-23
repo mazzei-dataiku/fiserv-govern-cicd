@@ -104,7 +104,7 @@ def wait_for_scan_and_download(
     expected_head_sha: Optional[str] = None,
     report_path: str = "scan_report.txt",
     artifact_name: Optional[str] = None,
-    prefer_logs_over_artifacts: bool = True,
+    prefer_logs_over_artifacts: bool = False,
     poll_interval_seconds: int = 10,
     max_start_wait_seconds: int = 120,
     max_complete_wait_seconds: int = 20 * 60,
@@ -181,7 +181,7 @@ def wait_for_scan_and_download(
             )
         time.sleep(poll_interval_seconds)
 
-    # Preferred: use run logs (works even when no artifacts exist).
+    # Optional: use run logs (works even when no artifacts exist).
     if prefer_logs_over_artifacts:
         repo_full_name = getattr(repo, "full_name", None)
         if repo_full_name:
